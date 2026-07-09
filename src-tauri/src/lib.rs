@@ -11,14 +11,26 @@ use tauri::Manager;
 pub struct AppState {
     pub db: Mutex<rusqlite::Connection>,
     pub epoch: AtomicU64,
-    pub pending_open: Mutex<Vec<String>>,
     pub watcher: Mutex<Option<notify::RecommendedWatcher>>,
+}
+
+/// Queue of file paths from CLI args or macOS Open events.
+///
+/// Deliberately a process-global, NOT Tauri-managed state: macOS delivers
+/// `application:openURLs:` during launch, before `setup` has run
+/// `app.manage(AppState)`. Touching managed state there panics
+/// ("state() called before manage()"), and a panic cannot unwind through
+/// tao's `extern "C"` AppKit callback, aborting the app (SIGABRT).
+static PENDING_OPEN: Mutex<Vec<String>> = Mutex::new(Vec::new());
+
+fn pending_open() -> std::sync::MutexGuard<'static, Vec<String>> {
+    PENDING_OPEN.lock().unwrap_or_else(|e| e.into_inner())
 }
 
 /// Frontend pulls queued file paths (from CLI args or macOS Open events) once ready.
 #[tauri::command]
-fn take_pending_open(state: tauri::State<'_, AppState>) -> Vec<String> {
-    std::mem::take(&mut *state.pending_open.lock().unwrap())
+fn take_pending_open() -> Vec<String> {
+    std::mem::take(&mut *pending_open())
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -29,19 +41,17 @@ pub fn run() {
         .plugin(tauri_plugin_clipboard_manager::init())
         .setup(|app| {
             let db = translate::init_db(app.handle()).map_err(|e| e.to_string())?;
-            let mut pending = Vec::new();
             for arg in std::env::args().skip(1) {
                 if !arg.starts_with('-') && std::path::Path::new(&arg).exists() {
                     let p = std::fs::canonicalize(&arg)
                         .map(|p| p.to_string_lossy().into_owned())
                         .unwrap_or(arg);
-                    pending.push(p);
+                    pending_open().push(p);
                 }
             }
             app.manage(AppState {
                 db: Mutex::new(db),
                 epoch: AtomicU64::new(0),
-                pending_open: Mutex::new(pending),
                 watcher: Mutex::new(None),
             });
             Ok(())
@@ -81,8 +91,7 @@ pub fn run() {
                 if paths.is_empty() {
                     return;
                 }
-                let state = app_handle.state::<AppState>();
-                state.pending_open.lock().unwrap().extend(paths);
+                pending_open().extend(paths);
                 let _ = app_handle.emit("open-file", ());
                 if let Some(w) = app_handle.get_webview_window("main") {
                     let _ = w.set_focus();

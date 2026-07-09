@@ -57,6 +57,15 @@
             <p class="hint">Markdown（支持大模型翻译）· 文本 · 图片 · HTML</p>
           </div>
         </main>
+        <div id="find-bar" class="find-bar hidden">
+          <input id="find-input" type="text" placeholder="查找" spellcheck="false" autocomplete="off" />
+          <button id="find-case" class="find-toggle" title="区分大小写">Aa</button>
+          <span id="find-count" class="find-count"></span>
+          <span class="find-sep"></span>
+          <button id="find-prev" class="find-btn" title="上一个 (⇧↩ / ⇧⌘G)">‹</button>
+          <button id="find-next" class="find-btn" title="下一个 (↩ / ⌘G)">›</button>
+          <button id="find-close" class="find-btn" title="关闭 (Esc)">✕</button>
+        </div>
       </div>
       <div id="toast" class="toast hidden"></div>
       <div id="lang-menu" class="menu hidden"></div>

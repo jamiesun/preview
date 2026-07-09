@@ -545,6 +545,103 @@ select {
   max-width: 80%;
 }
 
+/* ------------------------------------------------------------ find bar */
+
+.find-bar {
+  position: fixed;
+  top: calc(var(--toolbar-h) + 8px);
+  right: 14px;
+  z-index: 150;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 6px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.22);
+}
+
+.find-bar.hidden {
+  display: none;
+}
+
+.find-bar input {
+  width: 200px;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-size: 13px;
+  padding: 3px 6px;
+}
+
+.find-count {
+  font-size: 11px;
+  color: var(--fg-muted);
+  min-width: 52px;
+  text-align: right;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.find-count.none {
+  color: #d1242f;
+}
+
+.find-sep {
+  width: 1px;
+  align-self: stretch;
+  margin: 2px 3px;
+  background: var(--border);
+}
+
+.find-btn,
+.find-toggle {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: var(--fg-muted);
+  font-size: 14px;
+  line-height: 1;
+  padding: 5px 7px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.find-toggle {
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.find-btn:hover,
+.find-toggle:hover {
+  background: color-mix(in srgb, var(--fg) 8%, transparent);
+  color: var(--fg);
+}
+
+.find-toggle.active {
+  background: var(--accent);
+  color: #fff;
+}
+
+::highlight(find-match) {
+  background-color: rgba(255, 213, 60, 0.5);
+}
+
+::highlight(find-current) {
+  background-color: #ff9632;
+  color: #1f2328;
+}
+
+html[data-theme="dark"] ::highlight(find-match) {
+  background-color: rgba(210, 153, 34, 0.45);
+}
+
+html[data-theme="dark"] ::highlight(find-current) {
+  background-color: #e3742a;
+  color: #ffffff;
+}
+
 /* ------------------------------------------------------------ markdown */
 
 .markdown-body {

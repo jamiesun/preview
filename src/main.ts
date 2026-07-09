@@ -1015,6 +1015,262 @@ getCurrentWebview().onDragDropEvent((event) => {
   }
 });
 
+// ---------------------------------------------------------------- find in page
+
+const findBar = $("#find-bar");
+const findInput = document.querySelector<HTMLInputElement>("#find-input")!;
+const findCountEl = $("#find-count");
+const findCaseBtn = $("#find-case");
+
+const find = {
+  open: false,
+  query: "",
+  matchCase: false,
+  ranges: [] as Range[],
+  current: -1,
+};
+
+const FIND_MAX = 2000;
+
+/// Tags that break a text run: a match never spans across them.
+const FIND_BLOCK = new Set([
+  "ADDRESS", "ARTICLE", "ASIDE", "BLOCKQUOTE", "BR", "DD", "DETAILS", "DIV",
+  "DL", "DT", "FIGCAPTION", "FIGURE", "H1", "H2", "H3", "H4", "H5", "H6",
+  "HEADER", "HR", "LI", "MAIN", "OL", "P", "PRE", "SECTION", "SUMMARY",
+  "TABLE", "TBODY", "TD", "TFOOT", "TH", "THEAD", "TR", "UL",
+]);
+
+interface FindSpan {
+  start: number;
+  end: number;
+  node: Text;
+}
+
+/// Concatenate visible text nodes into one haystack, with "\u0000" at block
+/// boundaries so matches cannot cross blocks, plus offset→node spans.
+function collectFindable(): { hay: string; spans: FindSpan[] } {
+  const parts: string[] = [];
+  const spans: FindSpan[] = [];
+  let len = 0;
+  const walker = document.createTreeWalker(content, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT, {
+    acceptNode(node) {
+      if (node.nodeType === Node.ELEMENT_NODE) {
+        const el = node as Element;
+        // Chrome-only UI, SVG (mermaid) and content hidden by the current
+        // translation mode (mirrors the CSS rules in styles.css).
+        if (el.matches("svg, .seg-tools, .seg-err")) return NodeFilter.FILTER_REJECT;
+        if (state.mode === "off" && el.classList.contains("seg-tr")) return NodeFilter.FILTER_REJECT;
+        if (
+          state.mode === "replace" &&
+          el.classList.contains("seg-src") &&
+          el.parentElement?.querySelector(":scope > .seg-tr")
+        ) {
+          return NodeFilter.FILTER_REJECT;
+        }
+        if (el.classList.contains("hidden")) return NodeFilter.FILTER_REJECT;
+      }
+      return NodeFilter.FILTER_ACCEPT;
+    },
+  });
+  for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+    if (n.nodeType === Node.ELEMENT_NODE) {
+      if (FIND_BLOCK.has((n as Element).tagName)) {
+        parts.push("\u0000");
+        len += 1;
+      }
+      continue;
+    }
+    const t = n as Text;
+    if (!t.data) continue;
+    parts.push(t.data.replace(/\s/g, " "));
+    spans.push({ start: len, end: len + t.data.length, node: t });
+    len += t.data.length;
+  }
+  return { hay: parts.join(""), spans };
+}
+
+function findRegistry(): Map<string, unknown> | undefined {
+  return (CSS as unknown as { highlights?: Map<string, unknown> }).highlights;
+}
+
+function clearFindHighlights() {
+  const reg = findRegistry();
+  reg?.delete("find-match");
+  reg?.delete("find-current");
+  if (!reg) window.getSelection()?.removeAllRanges();
+}
+
+function applyFindHighlights() {
+  const reg = findRegistry();
+  const HL = (window as unknown as { Highlight?: new (...r: Range[]) => unknown }).Highlight;
+  if (reg && HL) {
+    if (find.ranges.length) {
+      reg.set("find-match", new HL(...find.ranges));
+      if (find.current >= 0) reg.set("find-current", new HL(find.ranges[find.current]));
+      else reg.delete("find-current");
+    } else {
+      reg.delete("find-match");
+      reg.delete("find-current");
+    }
+  } else {
+    // Fallback without the CSS Custom Highlight API: select the current match.
+    const sel = window.getSelection();
+    sel?.removeAllRanges();
+    const r = find.ranges[find.current];
+    if (r) sel?.addRange(r.cloneRange());
+  }
+}
+
+function updateFindCount() {
+  if (!find.query) {
+    findCountEl.textContent = "";
+    findCountEl.classList.remove("none");
+    return;
+  }
+  if (find.ranges.length === 0) {
+    findCountEl.textContent = "无结果";
+    findCountEl.classList.add("none");
+    return;
+  }
+  findCountEl.classList.remove("none");
+  const total = find.ranges.length >= FIND_MAX ? `${FIND_MAX}+` : String(find.ranges.length);
+  findCountEl.textContent = `${find.current + 1}/${total}`;
+}
+
+function revealCurrentMatch() {
+  const r = find.ranges[find.current];
+  if (!r) return;
+  const rect = r.getBoundingClientRect();
+  if (rect.width === 0 && rect.height === 0) return;
+  const c = content.getBoundingClientRect();
+  if (rect.top < c.top + 60 || rect.bottom > c.bottom - 60) {
+    content.scrollTop += rect.top - (c.top + c.height / 2) + rect.height / 2;
+  }
+}
+
+function runFind(resetCurrent: boolean, reveal: boolean) {
+  find.query = findInput.value;
+  find.ranges = [];
+  if (!find.query) {
+    find.current = -1;
+    clearFindHighlights();
+    updateFindCount();
+    return;
+  }
+  const { hay, spans } = collectFindable();
+  const hayCmp = find.matchCase ? hay : hay.toLowerCase();
+  const needle = (find.matchCase ? find.query : find.query.toLowerCase()).replace(/\s/g, " ");
+  let idx = 0;
+  let si = 0;
+  while (find.ranges.length < FIND_MAX && (idx = hayCmp.indexOf(needle, idx)) !== -1) {
+    const end = idx + needle.length;
+    while (si < spans.length && spans[si].end <= idx) si++;
+    const sSpan = spans[si];
+    let ei = si;
+    while (ei < spans.length && spans[ei].end < end) ei++;
+    const eSpan = spans[ei];
+    if (sSpan && eSpan && sSpan.start <= idx && eSpan.start < end) {
+      const r = document.createRange();
+      r.setStart(sSpan.node, idx - sSpan.start);
+      r.setEnd(eSpan.node, end - eSpan.start);
+      find.ranges.push(r);
+    }
+    idx = end;
+  }
+  if (find.ranges.length === 0) {
+    find.current = -1;
+  } else if (resetCurrent || find.current < 0) {
+    // First match at or below the top of the viewport.
+    find.current = 0;
+    const top = content.getBoundingClientRect().top;
+    for (let i = 0; i < find.ranges.length; i++) {
+      if (find.ranges[i].getBoundingClientRect().bottom >= top) {
+        find.current = i;
+        break;
+      }
+    }
+  } else {
+    find.current = Math.min(find.current, find.ranges.length - 1);
+  }
+  applyFindHighlights();
+  updateFindCount();
+  if (reveal) revealCurrentMatch();
+}
+
+function findNav(dir: 1 | -1) {
+  const len = find.ranges.length;
+  if (len === 0) return;
+  find.current = (find.current + dir + len) % len;
+  applyFindHighlights();
+  updateFindCount();
+  revealCurrentMatch();
+}
+
+let findInputTimer: number | undefined;
+let findMutTimer: number | undefined;
+
+/// Re-run the query when the document changes under the find bar
+/// (file reload, translations arriving, mode switch, mermaid rendering).
+const findObserver = new MutationObserver(() => {
+  if (!find.open || !find.query) return;
+  clearTimeout(findMutTimer);
+  findMutTimer = window.setTimeout(() => runFind(false, false), 200);
+});
+
+function openFind() {
+  const selText = window.getSelection()?.toString() ?? "";
+  findBar.classList.remove("hidden");
+  if (!find.open) {
+    find.open = true;
+    findObserver.observe(content, {
+      subtree: true,
+      childList: true,
+      characterData: true,
+      attributes: true,
+      attributeFilter: ["data-trmode"],
+    });
+  }
+  if (selText && !selText.includes("\n")) findInput.value = selText;
+  findInput.focus();
+  findInput.select();
+  if (findInput.value) runFind(true, true);
+}
+
+function closeFind() {
+  if (!find.open) return;
+  find.open = false;
+  findBar.classList.add("hidden");
+  findObserver.disconnect();
+  clearTimeout(findInputTimer);
+  clearTimeout(findMutTimer);
+  find.ranges = [];
+  find.current = -1;
+  clearFindHighlights();
+  findInput.blur();
+}
+
+findInput.addEventListener("input", () => {
+  clearTimeout(findInputTimer);
+  findInputTimer = window.setTimeout(() => runFind(true, true), 120);
+});
+
+findInput.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") {
+    e.preventDefault();
+    findNav(e.shiftKey ? -1 : 1);
+  }
+});
+
+$("#find-next").addEventListener("click", () => findNav(1));
+$("#find-prev").addEventListener("click", () => findNav(-1));
+$("#find-close").addEventListener("click", closeFind);
+findCaseBtn.addEventListener("click", () => {
+  find.matchCase = !find.matchCase;
+  findCaseBtn.classList.toggle("active", find.matchCase);
+  findInput.focus();
+  if (find.query || findInput.value) runFind(true, true);
+});
+
 // ---------------------------------------------------------------- toolbar & keys
 
 $("#btn-open").addEventListener("click", pickFile);
@@ -1059,6 +1315,17 @@ window.addEventListener("keydown", (e) => {
     appearance.fontSize = DEFAULT_APPEARANCE.fontSize;
     appearance.width = DEFAULT_APPEARANCE.width;
     applyAppearance();
+  } else if (mod && (e.key === "f" || e.key === "F")) {
+    e.preventDefault();
+    openFind();
+  } else if (mod && (e.key === "g" || e.key === "G")) {
+    if (find.open) {
+      e.preventDefault();
+      findNav(e.shiftKey ? -1 : 1);
+    }
+  } else if (e.key === "Escape" && find.open) {
+    e.preventDefault();
+    closeFind();
   }
 });
 
