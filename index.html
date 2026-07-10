@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Preview</title>
+    <script>
+      try {
+        var ap = JSON.parse(localStorage.getItem("preview-appearance") || "{}");
+        var t = ap.theme === "light" || ap.theme === "dark" ? ap.theme
+          : matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+        document.documentElement.dataset.theme = t;
+        document.documentElement.style.colorScheme = t;
+      } catch (e) {}
+    </script>
+  </head>
+  <body>
+    <div id="app">
+      <header id="toolbar">
+        <button id="btn-sidebar" class="btn icon" title="资源栏 (⌘B)">☰</button>
+        <button id="btn-open" class="btn" title="打开文件 (⌘O)">打开…</button>
+        <span id="file-name" class="file-name"></span>
+        <span class="spacer"></span>
+        <div id="img-tools" class="tool-group hidden">
+          <button id="img-zoom-out" class="btn icon" title="缩小">−</button>
+          <span id="img-zoom-label" class="zoom-label">适配</span>
+          <button id="img-zoom-in" class="btn icon" title="放大">＋</button>
+          <button id="img-fit" class="btn" title="适配窗口">适配</button>
+          <button id="img-orig" class="btn" title="实际大小">1:1</button>
+          <button id="img-rotate" class="btn icon" title="旋转 90°">⟳</button>
+        </div>
+        <div id="md-tools" class="tool-group hidden">
+          <div class="seg-ctrl" id="tr-switch">
+            <button class="seg-btn active" data-mode="off">原文<span class="seg-sub" id="src-lang"></span></button>
+            <button class="seg-btn" data-mode="replace">译文<span class="seg-sub" id="dst-lang"></span><span class="caret" id="lang-caret" title="选择目标语言">▾</span></button>
+            <button class="seg-btn" data-mode="bilingual">双语对照</button>
+          </div>
+          <span id="tr-status" class="tr-status"></span>
+        </div>
+        <button id="btn-copy" class="btn hidden" title="复制 (⌘⇧C)">复制 ▾</button>
+        <button id="btn-appearance" class="btn icon" title="外观">Aa</button>
+        <button id="btn-settings" class="btn icon" title="设置 (⌘,)">⚙︎</button>
+      </header>
+      <div id="main-row">
+        <aside id="sidebar" class="hidden">
+          <div class="sb-head">
+            <span id="sb-root" class="sb-root" title=""></span>
+            <button id="sb-close" class="btn icon" title="关闭资源栏">✕</button>
+          </div>
+          <div id="tree" class="tree"></div>
+          <div id="sb-resizer"></div>
+        </aside>
+        <main id="content">
+          <div class="empty">
+            <div class="empty-icon">⌘</div>
+            <p>把文件或文件夹拖到这里，<a href="#" id="empty-open">选择文件</a> 或 <a href="#" id="empty-open-folder">打开文件夹</a></p>
+            <p class="hint">Markdown（支持大模型翻译）· 文本 · 图片 · HTML</p>
+          </div>
+        </main>
+        <div id="find-bar" class="find-bar hidden">
+          <input id="find-input" type="text" placeholder="查找" spellcheck="false" autocomplete="off" />
+          <button id="find-case" class="find-toggle" title="区分大小写">Aa</button>
+          <span id="find-count" class="find-count"></span>
+          <span class="find-sep"></span>
+          <button id="find-prev" class="find-btn" title="上一个 (⇧↩ / ⇧⌘G)">‹</button>
+          <button id="find-next" class="find-btn" title="下一个 (↩ / ⌘G)">›</button>
+          <button id="find-close" class="find-btn" title="关闭 (Esc)">✕</button>
+        </div>
+      </div>
+      <div id="toast" class="toast hidden"></div>
+      <div id="lang-menu" class="menu hidden"></div>
+      <div id="copy-menu" class="menu hidden"></div>
+      <div id="appearance-menu" class="menu panel hidden">
+        <div class="ap-row">
+          <span class="ap-label">主题</span>
+          <div class="seg-ctrl small" id="ap-theme">
+            <button class="seg-btn" data-value="auto">自动</button>
+            <button class="seg-btn" data-value="light">浅色</button>
+            <button class="seg-btn" data-value="dark">深色</button>
+          </div>
+        </div>
+        <div class="ap-row">
+          <span class="ap-label">字体</span>
+          <div class="seg-ctrl small" id="ap-font">
+            <button class="seg-btn" data-value="system">默认</button>
+            <button class="seg-btn" data-value="serif">衬线</button>
+            <button class="seg-btn" data-value="mono">等宽</button>
+          </div>
+        </div>
+        <div class="ap-row">
+          <span class="ap-label">字号</span>
+          <div class="stepper">
+            <button id="ap-font-dec" class="btn icon" title="缩小 (⌘−)">A−</button>
+            <span id="ap-font-val" class="ap-val">15</span>
+            <button id="ap-font-inc" class="btn icon" title="放大 (⌘+)">A＋</button>
+          </div>
+        </div>
+        <div class="ap-row">
+          <span class="ap-label">宽度</span>
+          <input type="range" id="ap-width" min="560" max="1400" step="40" />
+          <span id="ap-width-val" class="ap-val">860</span>
+        </div>
+      </div>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

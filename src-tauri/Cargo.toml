@@ -1,0 +1,34 @@
+[package]
+name = "preview"
+version = "0.1.0"
+description = "A macOS Preview-like file viewer with LLM translation"
+authors = ["jamiesun"]
+license = "MIT"
+edition = "2021"
+
+[lib]
+name = "preview_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["protocol-asset"] }
+tauri-plugin-opener = "2"
+tauri-plugin-dialog = "2"
+tauri-plugin-clipboard-manager = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+pulldown-cmark = "0.13"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+rusqlite = { version = "0.32", features = ["bundled"] }
+sha2 = "0.10"
+tokio = { version = "1", features = ["sync"] }
+encoding_rs = "0.8"
+chardetng = "0.1"
+whatlang = "0.16"
+notify = "7"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["rt", "macros"] }

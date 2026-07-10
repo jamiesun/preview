@@ -1,0 +1,52 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Preview",
+  "version": "0.1.0",
+  "identifier": "com.jamiesun.preview",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "withGlobalTauri": false,
+    "windows": [
+      {
+        "label": "main",
+        "title": "Preview",
+        "width": 1000,
+        "height": 760,
+        "minWidth": 480,
+        "minHeight": 320,
+        "dragDropEnabled": true
+      }
+    ],
+    "security": {
+      "csp": null,
+      "assetProtocol": {
+        "enable": true,
+        "scope": ["**"]
+      }
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "category": "Productivity",
+    "fileAssociations": [
+      { "ext": ["md", "markdown", "mdown", "mkd"], "name": "Markdown", "role": "Viewer", "mimeType": "text/markdown" },
+      { "ext": ["txt", "text", "log", "json", "toml", "yaml", "yml", "css", "js", "ts", "py", "rs", "go", "sh"], "name": "Text", "role": "Viewer", "mimeType": "text/plain" },
+      { "ext": ["html", "htm"], "name": "HTML", "role": "Viewer", "mimeType": "text/html" },
+      { "ext": ["png", "jpg", "jpeg", "gif", "webp", "bmp", "svg", "ico", "tif", "tiff"], "name": "Image", "role": "Viewer" },
+      { "ext": ["pdf"], "name": "PDF", "role": "Viewer", "mimeType": "application/pdf" }
+    ],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ]
+  }
+}
