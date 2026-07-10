@@ -3,11 +3,49 @@ use crate::AppState;
 use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use std::sync::atomic::Ordering;
-use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tauri::{AppHandle, Emitter, Manager, State};
 use tokio::sync::Semaphore;
+
+#[derive(Default)]
+pub struct TranslationRuns {
+    epoch: AtomicU64,
+    active: Mutex<Option<String>>,
+}
+
+impl TranslationRuns {
+    fn start(&self, run_id: &str) -> u64 {
+        let mut active = self.active.lock().unwrap();
+        let epoch = self.epoch.fetch_add(1, Ordering::SeqCst) + 1;
+        *active = Some(run_id.to_string());
+        epoch
+    }
+
+    fn is_current(&self, epoch: u64) -> bool {
+        self.epoch.load(Ordering::SeqCst) == epoch
+    }
+
+    fn finish(&self, run_id: &str) {
+        let mut active = self.active.lock().unwrap();
+        if active.as_deref() == Some(run_id) {
+            *active = None;
+        }
+    }
+
+    fn cancel(&self, run_id: Option<&str>) -> bool {
+        let mut active = self.active.lock().unwrap();
+        if let Some(expected) = run_id {
+            if active.as_deref() != Some(expected) {
+                return false;
+            }
+        }
+        self.epoch.fetch_add(1, Ordering::SeqCst);
+        *active = None;
+        true
+    }
+}
 
 pub fn init_db(app: &AppHandle) -> Result<Connection, Box<dyn std::error::Error>> {
     let dir = app.path().app_data_dir()?;
@@ -141,6 +179,7 @@ pub struct SegmentIn {
 #[serde(rename_all = "camelCase")]
 pub struct TrProgress {
     pub doc_key: String,
+    pub run_id: String,
     pub seg: usize,
     /// "done" | "error"
     pub status: String,
@@ -154,6 +193,7 @@ pub struct TrProgress {
 #[serde(rename_all = "camelCase")]
 pub struct TrDone {
     pub doc_key: String,
+    pub run_id: String,
     pub total: usize,
     pub ok: usize,
     pub cached: usize,
@@ -168,6 +208,7 @@ pub struct TrDone {
 pub async fn translate_doc(
     app: AppHandle,
     doc_key: String,
+    run_id: String,
     segments: Vec<SegmentIn>,
     refdefs: Option<String>,
     target_lang: Option<String>,
@@ -186,12 +227,9 @@ pub async fn translate_doc(
         settings.system_prompt.replace("{lang}", &lang)
     };
 
-    let epoch = {
-        let st = app.state::<AppState>();
-        st.epoch.fetch_add(1, Ordering::SeqCst) + 1
-    };
     let sem = Arc::new(Semaphore::new(settings.concurrency.clamp(1, 8) as usize));
     let client = http_client()?;
+    let epoch = app.state::<AppState>().translations.start(&run_id);
 
     let total = segments.len();
     let mut ok = 0usize;
@@ -213,6 +251,7 @@ pub async fn translate_doc(
                 "translate-progress",
                 TrProgress {
                     doc_key: doc_key.clone(),
+                    run_id: run_id.clone(),
                     seg: seg.id,
                     status: "done".into(),
                     cached: true,
@@ -224,20 +263,21 @@ pub async fn translate_doc(
             continue;
         }
 
-        let (app2, sem2, sys2, s2, lang2, dk, rd, client2) = (
+        let (app2, sem2, sys2, s2, lang2, dk, rid, rd, client2) = (
             app.clone(),
             sem.clone(),
             sys.clone(),
             settings.clone(),
             lang.clone(),
             doc_key.clone(),
+            run_id.clone(),
             refdefs.clone(),
             client.clone(),
         );
         handles.push(tauri::async_runtime::spawn(async move {
             let _permit = sem2.acquire().await;
             let st = app2.state::<AppState>();
-            if st.epoch.load(Ordering::SeqCst) != epoch {
+            if !st.translations.is_current(epoch) {
                 return None; // cancelled before start
             }
             match chat(&client2, &s2, &sys2, &seg.source).await {
@@ -247,11 +287,12 @@ pub async fn translate_doc(
                         let db = st.db.lock().unwrap();
                         cache_put(&db, &key, &s2.model, &lang2, &md);
                     }
-                    if st.epoch.load(Ordering::SeqCst) == epoch {
+                    if st.translations.is_current(epoch) {
                         let _ = app2.emit(
                             "translate-progress",
                             TrProgress {
                                 doc_key: dk,
+                                run_id: rid,
                                 seg: seg.id,
                                 status: "done".into(),
                                 cached: false,
@@ -264,11 +305,12 @@ pub async fn translate_doc(
                     Some(true)
                 }
                 Err(e) => {
-                    if st.epoch.load(Ordering::SeqCst) == epoch {
+                    if st.translations.is_current(epoch) {
                         let _ = app2.emit(
                             "translate-progress",
                             TrProgress {
                                 doc_key: dk,
+                                run_id: rid,
                                 seg: seg.id,
                                 status: "error".into(),
                                 cached: false,
@@ -292,12 +334,12 @@ pub async fn translate_doc(
         }
     }
 
-    let cancelled = {
-        let st = app.state::<AppState>();
-        st.epoch.load(Ordering::SeqCst) != epoch
-    };
+    let translations = &app.state::<AppState>().translations;
+    let cancelled = !translations.is_current(epoch);
+    translations.finish(&run_id);
     let done = TrDone {
         doc_key,
+        run_id,
         total,
         ok,
         cached: cached_n,
@@ -309,8 +351,8 @@ pub async fn translate_doc(
 }
 
 #[tauri::command]
-pub fn cancel_translate(state: State<'_, AppState>) {
-    state.epoch.fetch_add(1, Ordering::SeqCst);
+pub fn cancel_translate(state: State<'_, AppState>, run_id: Option<String>) -> bool {
+    state.translations.cancel(run_id.as_deref())
 }
 
 #[derive(Serialize)]
@@ -347,6 +389,24 @@ pub fn clear_translation_cache(state: State<'_, AppState>) -> Result<(), String>
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn scoped_cancellation_never_cancels_a_newer_run() {
+        let runs = TranslationRuns::default();
+        let first_epoch = runs.start("first");
+        let second_epoch = runs.start("second");
+        assert!(!runs.is_current(first_epoch));
+        assert!(runs.is_current(second_epoch));
+
+        assert!(!runs.cancel(Some("first")));
+        assert!(runs.is_current(second_epoch));
+        assert!(runs.cancel(Some("second")));
+        assert!(!runs.is_current(second_epoch));
+
+        let third_epoch = runs.start("third");
+        assert!(runs.cancel(None));
+        assert!(!runs.is_current(third_epoch));
+    }
 
     #[test]
     fn cache_key_is_stable_and_discriminating() {

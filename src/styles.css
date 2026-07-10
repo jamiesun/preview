@@ -245,6 +245,10 @@ body {
   gap: 6px;
 }
 
+#viewer-tools:empty {
+  display: none;
+}
+
 .tool-group.hidden,
 .hidden {
   display: none !important;
@@ -845,6 +849,12 @@ html[data-theme="dark"] ::highlight(find-current) {
   padding: 4px 14px;
   border-bottom: 1px solid var(--border);
   background: var(--bg-soft);
+}
+
+.text-mode-host {
+  flex: 1;
+  display: flex;
+  min-height: 0;
 }
 
 .text-view {

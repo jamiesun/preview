@@ -1,9 +1,11 @@
 import { invoke } from "@tauri-apps/api/core";
 
+export type FileKind = "markdown" | "html" | "image" | "pdf" | "text" | "unknown" | "dir";
+
 export interface FileInfo {
   path: string;
   name: string;
-  kind: "markdown" | "html" | "image" | "pdf" | "text" | "unknown" | "dir";
+  kind: FileKind;
   size: number;
 }
 
@@ -11,7 +13,12 @@ export interface DirEntry {
   name: string;
   path: string;
   isDir: boolean;
-  kind: string;
+  kind: FileKind;
+}
+
+export interface FormatCatalogEntry {
+  kind: Exclude<FileKind, "unknown" | "dir">;
+  extensions: string[];
 }
 
 export interface TextDoc {
@@ -36,6 +43,7 @@ export interface MdDoc {
 
 export interface TrProgress {
   docKey: string;
+  runId: string;
   seg: number;
   status: "done" | "error";
   cached: boolean;
@@ -46,6 +54,7 @@ export interface TrProgress {
 
 export interface TrDone {
   docKey: string;
+  runId: string;
   total: number;
   ok: number;
   cached: number;
@@ -69,6 +78,7 @@ export interface CacheStats {
 }
 
 export const detectFile = (path: string) => invoke<FileInfo>("detect_file", { path });
+export const getFormatCatalog = () => invoke<FormatCatalogEntry[]>("get_format_catalog");
 export const readTextFile = (path: string) => invoke<TextDoc>("read_text_file", { path });
 export const listDir = (path: string) => invoke<DirEntry[]>("list_dir", { path });
 export const renderMarkdown = (path: string) => invoke<MdDoc>("render_markdown", { path });
@@ -81,16 +91,19 @@ export const testLlm = (settings: Settings) => invoke<string>("test_llm_connecti
 export const openSettingsWindow = () => invoke<void>("open_settings_window");
 export const translateDoc = (
   docKey: string,
+  runId: string,
   segments: { id: number; source: string }[],
   refdefs: string,
   targetLang?: string,
 ) =>
   invoke<TrDone>("translate_doc", {
     docKey,
+    runId,
     segments,
     refdefs,
     targetLang: targetLang ?? null,
   });
-export const cancelTranslate = () => invoke<void>("cancel_translate");
+export const cancelTranslate = (runId?: string) =>
+  invoke<boolean>("cancel_translate", { runId: runId ?? null });
 export const cacheStats = () => invoke<CacheStats>("translation_cache_stats");
 export const clearCache = () => invoke<void>("clear_translation_cache");

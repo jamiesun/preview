@@ -21,22 +21,7 @@
         <button id="btn-open" class="btn" title="打开文件 (⌘O)">打开…</button>
         <span id="file-name" class="file-name"></span>
         <span class="spacer"></span>
-        <div id="img-tools" class="tool-group hidden">
-          <button id="img-zoom-out" class="btn icon" title="缩小">−</button>
-          <span id="img-zoom-label" class="zoom-label">适配</span>
-          <button id="img-zoom-in" class="btn icon" title="放大">＋</button>
-          <button id="img-fit" class="btn" title="适配窗口">适配</button>
-          <button id="img-orig" class="btn" title="实际大小">1:1</button>
-          <button id="img-rotate" class="btn icon" title="旋转 90°">⟳</button>
-        </div>
-        <div id="md-tools" class="tool-group hidden">
-          <div class="seg-ctrl" id="tr-switch">
-            <button class="seg-btn active" data-mode="off">原文<span class="seg-sub" id="src-lang"></span></button>
-            <button class="seg-btn" data-mode="replace">译文<span class="seg-sub" id="dst-lang"></span><span class="caret" id="lang-caret" title="选择目标语言">▾</span></button>
-            <button class="seg-btn" data-mode="bilingual">双语对照</button>
-          </div>
-          <span id="tr-status" class="tr-status"></span>
-        </div>
+        <div id="viewer-tools" class="tool-group"></div>
         <button id="btn-copy" class="btn hidden" title="复制 (⌘⇧C)">复制 ▾</button>
         <button id="btn-appearance" class="btn icon" title="外观">Aa</button>
         <button id="btn-settings" class="btn icon" title="设置 (⌘,)">⚙︎</button>
