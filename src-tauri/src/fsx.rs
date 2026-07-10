@@ -1,3 +1,4 @@
+use crate::formats::{self, FileKind};
 use serde::Serialize;
 use std::fs;
 use std::io::Read;
@@ -8,35 +9,8 @@ use std::path::Path;
 pub struct FileInfo {
     pub path: String,
     pub name: String,
-    pub kind: String,
+    pub kind: FileKind,
     pub size: u64,
-}
-
-const MD_EXTS: &[&str] = &["md", "markdown", "mdown", "mkd", "mdwn"];
-const HTML_EXTS: &[&str] = &["html", "htm", "xhtml"];
-const IMG_EXTS: &[&str] = &[
-    "png", "jpg", "jpeg", "gif", "webp", "bmp", "ico", "svg", "tif", "tiff", "avif", "heic",
-    "heif",
-];
-
-fn ext_of(p: &Path) -> String {
-    p.extension()
-        .map(|e| e.to_string_lossy().to_lowercase())
-        .unwrap_or_default()
-}
-
-fn kind_by_ext(ext: &str) -> Option<&'static str> {
-    if MD_EXTS.contains(&ext) {
-        Some("markdown")
-    } else if HTML_EXTS.contains(&ext) {
-        Some("html")
-    } else if IMG_EXTS.contains(&ext) {
-        Some("image")
-    } else if ext == "pdf" {
-        Some("pdf")
-    } else {
-        None
-    }
 }
 
 /// Heuristic: a file is "text" if its first 8 KiB contain no NUL byte.
@@ -48,15 +22,14 @@ fn looks_like_text(path: &Path) -> bool {
     }
 }
 
-pub fn kind_of(path: &Path) -> String {
-    let ext = ext_of(path);
-    if let Some(k) = kind_by_ext(&ext) {
-        return k.to_string();
+pub fn kind_of(path: &Path) -> FileKind {
+    if let Some(kind) = formats::kind_by_path_extension(path) {
+        return kind;
     }
     if looks_like_text(path) {
-        "text".to_string()
+        FileKind::Text
     } else {
-        "unknown".to_string()
+        FileKind::Unknown
     }
 }
 
@@ -70,7 +43,7 @@ pub fn detect_file(path: String) -> Result<FileInfo, String> {
         .unwrap_or_else(|| path.clone());
     if meta.is_dir() {
         return Ok(FileInfo {
-            kind: "dir".into(),
+            kind: FileKind::Dir,
             name,
             size: 0,
             path,
@@ -90,7 +63,7 @@ pub struct DirEntry {
     pub name: String,
     pub path: String,
     pub is_dir: bool,
-    pub kind: String,
+    pub kind: FileKind,
 }
 
 /// Lists one directory level (used by the sidebar tree, which lazy-loads
@@ -107,10 +80,10 @@ pub fn list_dir(path: String) -> Result<Vec<DirEntry>, String> {
         let p = entry.path();
         let is_dir = entry.file_type().map(|t| t.is_dir()).unwrap_or(false);
         let kind = if is_dir {
-            "dir".to_string()
+            FileKind::Dir
         } else {
             // Extension-only here: sniffing every file would slow large trees.
-            kind_by_ext(&ext_of(&p)).unwrap_or("file").to_string()
+            formats::kind_by_path_extension(&p).unwrap_or(FileKind::Unknown)
         };
         out.push(DirEntry {
             name,
@@ -169,10 +142,29 @@ mod tests {
 
     #[test]
     fn kind_by_extension() {
-        assert_eq!(kind_of(Path::new("/tmp/a.md")), "markdown");
-        assert_eq!(kind_of(Path::new("/tmp/a.HTML")), "html");
-        assert_eq!(kind_of(Path::new("/tmp/a.PNG")), "image");
-        assert_eq!(kind_of(Path::new("/tmp/a.pdf")), "pdf");
+        assert_eq!(kind_of(Path::new("/tmp/a.md")), FileKind::Markdown);
+        assert_eq!(kind_of(Path::new("/tmp/a.HTML")), FileKind::Html);
+        assert_eq!(kind_of(Path::new("/tmp/a.PNG")), FileKind::Image);
+        assert_eq!(kind_of(Path::new("/tmp/a.pdf")), FileKind::Pdf);
+        assert_eq!(kind_of(Path::new("/tmp/a.json")), FileKind::Text);
+        assert_eq!(kind_of(Path::new("/tmp/a.rs")), FileKind::Text);
+    }
+
+    #[test]
+    fn unknown_extensions_keep_text_sniff_fallback() {
+        let dir = std::env::temp_dir().join("preview_test_kind_sniff");
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+
+        let text = dir.join("notes.custom");
+        fs::write(&text, "plain text").unwrap();
+        assert_eq!(kind_of(&text), FileKind::Text);
+
+        let binary = dir.join("blob.custom");
+        fs::write(&binary, b"binary\0data").unwrap();
+        assert_eq!(kind_of(&binary), FileKind::Unknown);
+
+        let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]
@@ -182,13 +174,21 @@ mod tests {
         fs::create_dir_all(dir.join("zeta")).unwrap();
         fs::write(dir.join("b.md"), "x").unwrap();
         fs::write(dir.join("A.png"), "x").unwrap();
+        fs::write(dir.join("notes.txt"), "x").unwrap();
+        fs::write(dir.join("raw.custom"), "x").unwrap();
         fs::write(dir.join(".hidden"), "x").unwrap();
         let entries = list_dir(dir.to_string_lossy().into_owned()).unwrap();
         let names: Vec<&str> = entries.iter().map(|e| e.name.as_str()).collect();
-        assert_eq!(names, vec!["zeta", "A.png", "b.md"]);
+        assert_eq!(
+            names,
+            vec!["zeta", "A.png", "b.md", "notes.txt", "raw.custom"]
+        );
         assert!(entries[0].is_dir);
-        assert_eq!(entries[1].kind, "image");
-        assert_eq!(entries[2].kind, "markdown");
+        assert_eq!(entries[0].kind, FileKind::Dir);
+        assert_eq!(entries[1].kind, FileKind::Image);
+        assert_eq!(entries[2].kind, FileKind::Markdown);
+        assert_eq!(entries[3].kind, FileKind::Text);
+        assert_eq!(entries[4].kind, FileKind::Unknown);
         let _ = fs::remove_dir_all(&dir);
     }
 

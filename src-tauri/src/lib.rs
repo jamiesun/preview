@@ -1,16 +1,16 @@
+mod formats;
 mod fsx;
 mod markdown;
 mod settings;
 mod translate;
 mod watch;
 
-use std::sync::atomic::AtomicU64;
 use std::sync::Mutex;
 use tauri::Manager;
 
 pub struct AppState {
     pub db: Mutex<rusqlite::Connection>,
-    pub epoch: AtomicU64,
+    pub translations: translate::TranslationRuns,
     pub watcher: Mutex<Option<notify::RecommendedWatcher>>,
 }
 
@@ -51,13 +51,14 @@ pub fn run() {
             }
             app.manage(AppState {
                 db: Mutex::new(db),
-                epoch: AtomicU64::new(0),
+                translations: translate::TranslationRuns::default(),
                 watcher: Mutex::new(None),
             });
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             take_pending_open,
+            formats::get_format_catalog,
             fsx::detect_file,
             fsx::read_text_file,
             fsx::list_dir,

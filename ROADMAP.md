@@ -1,24 +1,28 @@
 # Preview 路线图
 
-类似 macOS 内置 Preview 的轻量文件预览应用，基于 **Tauri 2 + Rust**，特色是内置大模型翻译。
+基于 **Tauri 2 + Rust** 的专业文件阅读器。目标不是复刻 macOS Preview，而是在结构化文本、内容感知翻译、搜索与格式扩展能力上持续超越系统预览。
 
 ```
 Tauri 2
-├─ 前端 WebView
-│  ├─ HTML:     iframe sandbox 渲染
-│  ├─ Markdown: pulldown-cmark 渲染成 HTML（Rust 侧）
-│  ├─ Text:     代码高亮、等宽字体、自动编码识别
-│  ├─ Image:    img 缩放、旋转、适配窗口
-│  └─ PDF:      pdf.js 渲染
+├─ 前端应用壳
+│  ├─ ViewerHost: 文件导航、Session 生命周期、过期异步任务隔离
+│  ├─ ViewerRegistry: Markdown / Text / Image / HTML / PDF / Unknown
+│  ├─ Features: 外观、搜索、复制菜单、资源栏
+│  └─ TextExtensionRegistry
+│     ├─ source（所有文本的权威源码视图）
+│     ├─ render modes（JSON/TOML/YAML 等结构化投影）
+│     └─ translation strategies（全文、字段、代码注释等内容策略）
 │
 └─ Rust 后端
+   ├─ FileKind + 格式目录（扩展名统一注册）
    ├─ 文件读取 / 编码检测（chardetng + encoding_rs）
    ├─ 类型识别（扩展名 + 二进制嗅探）
-   ├─ 翻译缓存（SQLite，按段落内容寻址）
+   ├─ Markdown 解析与翻译缓存（SQLite）
    ├─ 文件监听（notify，外部修改热重载）
-   ├─ 安全沙箱（HTML iframe sandbox / capability 最小化）
    └─ LLM 翻译（OpenAI 兼容 API，并发 + 可取消）
 ```
+
+架构扩展约束见 [`docs/architecture.md`](./docs/architecture.md)。
 
 ## M0 — 骨架 ✅
 - [x] Tauri 2 + Vite + vanilla-ts 脚手架
@@ -47,19 +51,48 @@ Tauri 2
 - [x] 图片：缩放 / 旋转 / 适配窗口 / 实际大小（asset protocol）
 - [x] HTML：iframe sandbox 渲染（默认禁脚本）
 
-## M3 — PDF
+## M2.5 — 模块化扩展基座 ✅
+- [x] Rust `FileKind` 枚举与统一格式目录，文件选择器从后端目录生成
+- [x] 文件关联与格式目录一致性测试，避免扩展名配置漂移
+- [x] `ViewerRegistry → ViewerSession` 生命周期，移除中央格式 `switch`
+- [x] Markdown / Text / Image / HTML 独立 Viewer，格式状态不再堆积在应用全局对象
+- [x] 外观、页内搜索、复制菜单、资源栏拆为跨 Viewer 功能模块
+- [x] 导航 generation + `AbortSignal`，阻止慢文件覆盖后打开的文件
+- [x] 首屏与增强渲染分离：高亮按需加载、首帧后分批执行、超大代码降级源码
+- [x] 启动监听与设置读取并行，Finder / CLI 待打开队列串行排空
+- [x] Markdown 翻译 `runId` 与作用域取消，隔离同路径重载和过期任务
+- [x] `TextExtensionRegistry`、`TextRenderMode`、`TextTranslationStrategy` 扩展契约
+
+## M3 — 结构化文本阅读
+- [x] 所有非 Markdown 文本保留统一 `source` 模式和原始内容复制
+- [x] 渲染模式按文本格式注册，解析失败可回退源码
+- [ ] JSON 树状模式：折叠、路径复制、搜索、大文件保护
+- [ ] TOML 结构模式：保留顺序并明确展示表、数组表和标量类型
+- [ ] YAML 结构模式：多文档、锚点/别名、标签和解析失败提示
+- [ ] 模式偏好按格式保存，源码与渲染视图的搜索/复制语义保持明确
+- [ ] 为 XML、CSV、日志等格式保留独立模式接入能力，不在 `TextViewer` 增加特殊分支
+
+## M4 — 内容感知翻译
+- [ ] 通用文本翻译传输：原始文本单元、run identity、profile/version 缓存隔离
+- [ ] 普通文本按段落翻译，支持原文 / 译文 / 双语视图
+- [ ] JSON/YAML/TOML 可按字符串值或选中路径翻译，不破坏键名和结构
+- [ ] 代码注释翻译：使用语言 tokenizer，保留注释符号、缩进、换行和未选中源码
+- [ ] HTML 可见文本翻译，保持标签、属性和脚本边界
+- [ ] 翻译投影默认只读；导出与写回必须作为显式、可审查的独立能力
+
+## M5 — PDF
 - [ ] pdf.js 集成（分页、缩放、连续滚动）
-- [ ] PDF 文本层抽取 → 复用翻译管线
+- [ ] 文本层、目录、链接和页内搜索
+- [ ] PDF 文本抽取接入内容感知翻译策略
 - [ ] 备选：Rust 侧 pdfium-render 转位图（超大文件降级路径）
 
-## M4 — 翻译体验增强
-- [ ] 文本 / HTML 文件翻译（复用分段管线）
+## M6 — 翻译体验增强
 - [ ] 流式输出（SSE，逐 token 上屏）
 - [ ] 多目标语言快速切换、术语表 / 自定义提示词模板
-- [ ] 整篇导出：翻译后 Markdown / HTML
+- [ ] 整篇导出：翻译后 Markdown / HTML / 文本格式
 - [ ] API Key 存入 macOS Keychain（替代明文 JSON）
 
-## M5 — 打磨
+## M7 — 打磨与系统级预览体验
 - [ ] KaTeX 数学公式渲染
 - [x] Cmd+F 页内搜索（全部高亮、上一个/下一个、大小写开关、跟随翻译视图）
 - [ ] 目录（TOC）侧栏
@@ -71,5 +104,6 @@ Tauri 2
 - [ ] 多标签 / 最近打开列表
 - [ ] 自动更新（tauri-plugin-updater）
 
-## 暂缓
+## 方向储备
 - Office 文档（docx/xlsx/pptx）、压缩包、音视频、字体预览
+- 这些格式必须沿用 Viewer/Session 契约接入，不能重新进入应用壳增加格式特判
